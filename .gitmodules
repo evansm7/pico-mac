@@ -1,0 +1,3 @@
+[submodule "external/umac"]
+	url = https://github.com/evansm7/umac
+	path = external/umac

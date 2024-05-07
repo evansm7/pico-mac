@@ -1,0 +1,194 @@
+; PIO video output:
+; This scans out video lines, characteristically some number of bits per pixel,
+; a pixel clock, and timing signals HSync, VSync (in future, DE too).
+;
+; Copyright 2024 Matt Evans
+;
+; Permission is hereby granted, free of charge, to any person
+; obtaining a copy of this software and associated documentation files
+; (the "Software"), to deal in the Software without restriction,
+; including without limitation the rights to use, copy, modify, merge,
+; publish, distribute, sublicense, and/or sell copies of the Software,
+; and to permit persons to whom the Software is furnished to do so,
+; subject to the following conditions:
+;
+; The above copyright notice and this permission notice shall be
+; included in all copies or substantial portions of the Software.
+;
+; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+; EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+; MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+; NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+; BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+; ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+; CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+; SOFTWARE.
+;
+;
+; The source of image data is the OUT FIFO, and a corresponding C routine
+; needs to fill this with image data.  That data might be generated on
+; the fly, or constructed by setting DMA pointers to a framebuffer.
+;
+; A typical usage would be the C routine preparing one scanline of data
+; and setting off DMA.  That's a good balance between number of interrupts
+; and amount of buffering/RAM required (a framebuffer is generally pretty
+; large...)
+;
+; Supports a max of 15bpp.  That's tons given the number of IO... expecting
+; to use this with 8, 3, etc.
+;
+; The output pins are required to be, in this order,
+; 0: Video data
+; 0+BPP: Vsync
+; 1+BPP: PClk
+; 2+BPP: Hsync
+;
+; FIXME: 1BPP for now
+;
+; The horizontal timing information is embedded in the data read via
+; the FIFO, as follows, shown from the very start of a frame.  The vertical
+; timing info is generated entirely from the C side by passing a VSync
+; value in the data stream.  The data stream for each line is:
+;
+; ---------- Config information:   (offset 0 on each line) ----------
+; 32b:  Timing/sync info:
+;       [31]     Vsync value for this line
+;       [30:23]   Hsync width (HSW)
+;       [22:15]   HBP width minus 3 (FIXME: check)
+;       [14:7]    HFP width minus 3
+; 32b:  Number of visible pixels per line
+; ---------- Pixel data:  (offset 8 on each line) -------------------
+; <X * bytes_per_pixel>:  video data (padded with zeros for HBP/HFP pixels)
+; -------------------------------------------------------------------
+;
+;             + +--------------------------------------------------
+;             | |HBP-                                          -HFP
+;             +-+
+;    +--+     *****************************************************
+;       |     *****************************************************
+;    +--+     *****************************************************
+;    |VBP     *****************************************************
+;    |        &&&&&&&+----------------------------------------+%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|  Active area                           |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&|                                        |%%%%
+;    |        &&&&&&&+----------------------------------------+%%%%
+;    |VFP     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+;    |:       @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+;    |:       @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+;
+; The HFP/HBP pixels should be written zero.  Clever DMA programming can
+; provide these from a separate location to the video data.
+;
+; FIXME: Add DE (and therefore full HBP/HFP counters in timing word)
+;
+; There are a couple of pin-mapping tricks going on.  We need to be
+; able to change the video without messing wtih VS, and we want to
+; assert HS/VS at the same instant.  That means the syncs aren't part
+; of the OUT mapping -- this is only the pixel data.  The SET mapping
+; controls VS, and SIDESET controls HS/clk.
+;
+; The advantage of OUT being solely for data is then being able to easily
+; extend to multiple BPP.  Note the HS/VS are active-high in terms of
+; programming, but the output signal can be flipped at GPIO using the
+; inversion feature.
+
+; .define BPP 123 etc.
+
+.program pio_video
+.side_set 2             ; SS[0] is clk, SS[1] is HS
+
+frame_start:
+; The first word gives VS/HSW:  [31]=vsync; [30:23]=HSW
+; [22:15]=HBP, [14:7]=HFP.  (shifted left!)
+;
+; Set VS on the same cycle as asserting HS.
+; Note: these cycles are part of HFP.
+             out        X, 1                    side 0
+             jmp        !X, vs_inactive         side 1
+vs_active:
+             set        pins, 1                 side 2
+             jmp        now_read_HSW            side 3
+vs_inactive:
+             set        pins, 0                 side 2
+             nop                                side 3
+
+now_read_HSW:           ; X=hsync width:
+             out        X, 8                    side 2
+hsw_loop:    nop                                side 3
+             jmp        X-- hsw_loop            side 2
+
+; De-assert hsync (leave Vsync as-is) and shift out HBP:
+now_read_HBP:           ; X=HBP width:
+             out        X, 8                    side 1
+hbp_loop:    nop                                side 0
+             jmp        X-- hbp_loop            side 1
+
+now_read_HFP:           ; Y=HFP width:
+             out        Y, 8                    side 0
+
+; Pull, discarding the remainder of OSR.  This prepares X pixel count.
+; Note: these cycles (and HFP read) are part of HBP.
+             pull       block                   side 1
+             out        X, 32                   side 0
+             nop                                side 1
+pixels_loop: ; OSR primed/autopulled
+             ; FIXME: side-set DE=1
+             out        pins, 1                 side 0  ; BPP
+             jmp        X-- pixels_loop         side 1
+             ; FIXME: side-set DE=0
+             ; Set video BLACK (1)
+             mov        pins, !NULL             side 0
+             nop                                side 1
+; Now perform HFP delay
+hfp_loop:    nop                                side 0
+             jmp        Y-- hfp_loop            side 1
+
+; A free HFP pixel, to prime for next line:
+             // Auto-pull gets next line (always a multiple of 32b)
+             nop                                side 0
+             jmp        frame_start             side 1
+
+; HFP 2 min
+; HBP 2 min
+
+
+% c-sdk {
+static inline void pio_video_program_init(PIO pio, uint sm, uint offset,
+                                          uint video_pin /* then VS, CLK, HS */,
+                                          float clk_div) {
+        /* Outputs are consecutive up from Video data */
+        uint vsync_pin = video_pin+1;
+        uint clk_pin = video_pin+2;
+        uint hsync_pin = video_pin+3;
+        /* Init GPIO & directions */
+        pio_gpio_init(pio, video_pin);
+        pio_gpio_init(pio, hsync_pin);
+        pio_gpio_init(pio, vsync_pin);
+        pio_gpio_init(pio, clk_pin);
+        // FIXME: BPP define
+        pio_sm_set_consecutive_pindirs(pio, sm, video_pin, 4, true /* out */);
+
+        pio_sm_config c = pio_video_program_get_default_config(offset);
+        sm_config_set_out_pins(&c, video_pin, 1);
+        sm_config_set_set_pins(&c, vsync_pin, 1);
+        sm_config_set_sideset_pins(&c, clk_pin);        /* CLK + HS */
+        /* Sideset bits are configured via .side_set directive above */
+        sm_config_set_out_shift(&c, false /* OUT MSBs first */, true /* Autopull */, 32 /* bits */);
+        sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+        sm_config_set_clkdiv(&c, clk_div);
+
+        pio_sm_init(pio, sm, offset, &c);
+        pio_sm_set_enabled(pio, sm, true);
+}
+%}
