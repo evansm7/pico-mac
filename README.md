@@ -29,7 +29,7 @@ to come, plus is required to generate a patched ROM image.
 ## Build essentials
 
    * git submodules
-    * Clone the repo with `--recursive`, or `git submodule update --init --recursive`
+      - Clone the repo with `--recursive`, or `git submodule update --init --recursive`
    * Install/set up the [Pico/RP2040 SDK](https://github.com/raspberrypi/pico-sdk)
 
 Do the initial Pico SDK `cmake` setup into an out-of-tree build dir:
