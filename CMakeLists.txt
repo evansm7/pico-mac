@@ -38,6 +38,10 @@ set(SD_MHZ 5 CACHE STRING "SD SPI speed in MHz")
 option(USE_VGA_RES "Video uses VGA (640x480) resolution" OFF)
 set(VIDEO_PIN 18 CACHE STRING "Video GPIO base pin (followed by VS, CLK, HS)")
 
+option(USE_PSRAM "Build in PSRAM support" OFF)
+# Also, set -DUSE_PSRAM_CS=<symbolic name, or number, of pin> (there is no
+# default)
+
 # See below, -DMEMSIZE=<size in KB> will configure umac's memory size,
 # overriding defaults.
 
@@ -51,15 +55,15 @@ project(firmware)
 pico_sdk_init()
 
 # For TUSB host stuff:
-set(FAMILY rp2040)
-set(BOARD raspberry_pi_pico)
-
 set(TINYUSB_PATH ${PICO_SDK_PATH}/lib/tinyusb)
 
 # umac subproject (and Musashi sub-subproject)
 set(UMAC_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/umac)
 set(UMAC_MUSASHI_PATH ${UMAC_PATH}/external/Musashi)
 set(UMAC_INCLUDE_PATHS ${UMAC_PATH}/include ${UMAC_MUSASHI_PATH})
+
+add_compile_definitions(USE_PSRAM=$<BOOL:${USE_PSRAM}>)
+add_compile_definitions(PSRAM_CS_PIN=${USE_PSRAM_CS})
 
 # This isn't very nice, but hey it's Sunday :p
 set(UMAC_SOURCES
@@ -74,7 +78,16 @@ set(UMAC_SOURCES
   ${UMAC_MUSASHI_PATH}/softfloat/softfloat.c
   )
 
-set(MEMSIZE 128 CACHE STRING "Memory size, in KB")
+if (USE_PSRAM)
+   if (NOT DEFINED USE_PSRAM_CS)
+      message(FATAL_ERROR "If USE_PSRAM is enabled, you must also provide USE_PSRAM_CS!")
+   endif()
+   set(DFL_MEMSIZE 4096)
+   set(EXTRA_PSRAM_SRC src/rp2_psram.c)
+else()
+   set(DFL_MEMSIZE 128)
+endif()
+set(MEMSIZE ${DFL_MEMSIZE} CACHE STRING "Memory size, in KB")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DPICO -DMUSASHI_CNF=\\\"../include/m68kconf.h\\\" -DUMAC_MEMSIZE=${MEMSIZE}")
 
 if (USE_SD)
@@ -103,6 +116,7 @@ if (TARGET tinyusb_device)
     src/kbd.c
     src/hid.c
     ${EXTRA_SD_SRC}
+    ${EXTRA_PSRAM_SRC}
 
     ${UMAC_SOURCES}
     )

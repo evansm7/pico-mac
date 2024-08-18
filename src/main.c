@@ -44,6 +44,9 @@
 #include "tusb.h"
 
 #include "umac.h"
+#if USE_PSRAM
+#include "rp2_psram.h"
+#endif
 
 #if USE_SD
 #include "f_util.h"
@@ -68,7 +71,11 @@ static const uint8_t umac_rom[] = {
 #include "umac-rom.h"
 };
 
+#if USE_PSRAM
+static uint8_t *umac_ram = (uint8_t *)PSRAM_LOCATION;
+#else
 static uint8_t umac_ram[RAM_SIZE];
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -273,6 +280,12 @@ int     main()
 
 	stdio_init_all();
         io_init();
+
+#if USE_PSRAM
+        printf("Init PSRAM\n");
+        size_t ps = psram_init(PSRAM_CS_PIN);
+        printf("  PSRAM memory %d\n", ps);
+#endif
 
         multicore_launch_core1(core1_main);
 
