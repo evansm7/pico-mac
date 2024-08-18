@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
 #include "hardware/sync.h"
