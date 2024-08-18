@@ -50,7 +50,11 @@
  * make my VGA-HDMI adapter sample weird, and pixels crawl.  Fudge a little,
  * looks better:
  */
+#if PICO_RP2350
+#define VIDEO_PCLK_MULT         (2.5*1.6)
+#else
 #define VIDEO_PCLK_MULT         (2.5*2)
+#endif
 #define VIDEO_HSW               96
 #define VIDEO_HBP               48
 #define VIDEO_HRES              640

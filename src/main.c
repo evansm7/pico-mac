@@ -265,7 +265,11 @@ static void     core1_main()
 
 int     main()
 {
-        set_sys_clock_khz(250*1000, true);
+#if PICO_RP2350
+        set_sys_clock_khz(1.6*125*1000, true);
+#else
+        set_sys_clock_khz(2*125*1000, true);
+#endif
 
 	stdio_init_all();
         io_init();
