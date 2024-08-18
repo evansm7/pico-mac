@@ -29,6 +29,13 @@ cmake_minimum_required(VERSION 3.13)
 # directory with cmake, e.g. "cmake .. -DOPTION=true":
 #
 
+option(USE_SD "Build in SD support" OFF)
+set(SD_TX 3 CACHE STRING "SD SPI TX pin")
+set(SD_RX 4 CACHE STRING "SD SPI RX pin")
+set(SD_SCK 2 CACHE STRING "SD SPI SCK pin")
+set(SD_CS 5 CACHE STRING "SD SPI CS pin")
+set(SD_MHZ 5 CACHE STRING "SD SPI speed in MHz")
+
 # See below, -DMEMSIZE=<size in KB> will configure umac's memory size,
 # overriding defaults.
 
@@ -68,12 +75,22 @@ set(UMAC_SOURCES
 set(MEMSIZE 128 CACHE STRING "Memory size, in KB")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DPICO -DMUSASHI_CNF=\\\"../include/m68kconf.h\\\" -DUMAC_MEMSIZE=${MEMSIZE}")
 
+if (USE_SD)
+   add_compile_definitions(USE_SD=1)
+   set(FF_DISABLE_RTC ${PICO_RP2350})  # RP2350 doesn't have RTC, so disable it
+   add_subdirectory(external/no-OS-FatFS-SD-SPI-RPi-Pico/FatFs_SPI build)
+   set(EXTRA_SD_SRC src/sd_hw_config.c)
+   set(EXTRA_SD_LIB FatFs_SPI)
+   add_compile_definitions(SD_TX=${SD_TX} SD_RX=${SD_RX} SD_SCK=${SD_SCK} SD_CS=${SD_CS} SD_MHZ=${SD_MHZ})
+endif()
+
 if (TARGET tinyusb_device)
   add_executable(firmware
     src/main.c
     src/video.c
     src/kbd.c
     src/hid.c
+    ${EXTRA_SD_SRC}
 
     ${UMAC_SOURCES}
     )
@@ -96,6 +113,7 @@ if (TARGET tinyusb_device)
     hardware_dma
     hardware_pio
     hardware_sync
+    ${EXTRA_SD_LIB}
     )
 
   target_include_directories(firmware PRIVATE
