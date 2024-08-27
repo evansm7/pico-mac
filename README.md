@@ -1,6 +1,6 @@
 # Pico Micro Mac (pico-umac)
 
-v0.1 15 June 2024
+v0.2 27 August 2024
 
 
 This project embeds the [umac Mac 128K
@@ -13,45 +13,111 @@ It has features, many features, the best features:
    * Outputs VGA 640x480@60Hz, monochrome, using three resistors
    * USB HID keyboard and mouse
    * Read-only disc image in flash (your creations are ephemeral, like life itself)
+   * Or, if you have a hard time letting go, support for rewritable
+     disc storage on an SPI-attached SD card
+   * Mac 128K by default, or you can make use of more of the Pico's
+     memory and run as a _Mac 208K_
 
 Great features.  It even doesn't hang at random!  (Anymore.)
+
+The _Mac 208K_ was, of course, never a real machine.  But, _umac_
+supports odd-sized memories, and more memory runs more things.  A
+surprising amount of software runs on the 128K config, but if you need
+to run _MacPaint_ specifically then you'll need to build both SD
+storage in addition to the _Mac 208K_ config.
 
 So anyway, you can build this project yourself for less than the cost
 of a beer!  You'll need at least a RPi Pico board, a VGA monitor (or
 VGA-HDMI adapter), a USB mouse (and maybe a USB keyboard/hub), plus a
 couple of cheap components.
 
-# Software prerequisites
+# Build
 
-Install and build `umac` first.  It'll give you a preview of the fun
-to come, plus is required to generate a patched ROM image.
-
-## Build essentials
+## Prerequisites/essentials
 
    * git submodules
       - Clone the repo with `--recursive`, or `git submodule update --init --recursive`
    * Install/set up the [Pico/RP2040 SDK](https://github.com/raspberrypi/pico-sdk)
 
-Do the initial Pico SDK `cmake` setup into an out-of-tree build dir:
+## Build umac
+
+Install and build `umac` first.  It'll give you a preview of the fun
+to come, plus is required to generate a patched ROM image.
+
+If you want to use a non-default memory size (i.e. >128K) you will
+need to build `umac` with a matching `MEMSIZE` build parameter, for
+example:
+
+```
+cd external/umac
+make MEMSIZE=208
+```
+
+This is because `umac` is used to patch the ROM, and when using
+unsupported sizes between 128K and 512K the RAM size can't be probed
+automatically, so the size needs to be embedded.
+
+## Build pico-umac
+
+Do the initial Pico SDK `cmake` setup into an out-of-tree build dir,
+providing config options if required.
+
+From the top-level `pico-umac` directory:
 
 ```
 mkdir build
-(cd build ; PICO_SDK_PATH=/path/to/sdk cmake ..)
+(cd build ; PICO_SDK_PATH=/path/to/sdk cmake .. <options>)
 ```
+
+Options are required if you want SD support, or more than the default 128K of memory:
+
+   * `-DUSE_SD=true`: Include SD card support.  The GPIOs default to
+     `spi0` running at 5MHz, and GPIOs 2,3,4,5 for
+     `SCK`/`TX`/`RX`/`CS` respectively.  These can be overridden for
+     your board/setup:
+      - `-DSD_TX=<gpio pin>`
+      - `-DSD_RX=<gpio pin>`
+      - `-DSD_SCK=<gpio pin>`
+      - `-DSD_CS=<gpio pin>`
+      - `-DSD_MHZ=<integer speed in MHz>`
+   * `-DMEMSIZE=<size in KB>`: The maximum practical size is about
+     208KB, but values between 128 and 208 should work on a RP2040.
+     Note that although apps and Mac OS seem to gracefully detect free
+     memory, these products never existed and some apps might behave
+     strangely.
+      - With the `Mac Plus` ROM, a _Mac 128K_ doesn't quite have
+        enough memory to run _MacPaint_.  So, 192 or 208 (and a
+        writeable boot volume on SD) will allow _MacPaint_ to run.
+      - **NOTE**: When this option is used, the ROM image must be
+          built with an `umac` build with a corresponding `MEMSIZE`
+
+Tip: `cmake` caches these variables, so if you see weird behaviour
+having built previously and then changed an option, delete the `build`
+directory and start again.
 
 ## ROM image
 
-The flow is to use `umac` installed on your workstation (e.g. Linux,
+The flow is to use `umac` built on your workstation (e.g. Linux,
 but WSL may work too) to prepare a patched ROM image.
 
 `umac` is passed the 4D1F8172 MacPlusv3 ROM, and `-W` to write the
 post-patching binary out:
 
 ```
-~/code/umac$ ./main -r '4D1F8172 - MacPlus v3.ROM' -W rom.bin
+./external/umac/main -r '4D1F8172 - MacPlus v3.ROM' -W rom.bin
 ```
 
+Note: Again, remember that if you are using the `-DMEMSIZE` option to
+increase the `pico-umac` memory, you will need to create this ROM
+image with a `umac` built with the corresponding `MEMSIZE` option, as
+above.
+
 ## Disc image
+
+If you don't build SD support, an internal read-only disc image is
+stored in flash.  If you do build SD support, you have the option to
+still include an image in flash, and this is used as a fallback if
+SD boot fails.
 
 Grab a Macintosh system disc from somewhere.  A 400K or 800K floppy
 image works just fine, up to System 3.2 (the last version to support
@@ -60,17 +126,31 @@ Mac128Ks).  I've used images from
 the various forums and MacintoshRepository.  See the `umac` README for
 info on formats (it needs to be raw data without header).
 
-Let's call this `disc.bin`.
+The image size can be whatever you have space for in flash (typically
+about 1.3MB is free there), or on the SD card.  (I don't know what the
+HFS limits are.  But if you make a 50MB disc you're unlikely to fill
+it with software that actually works on the _Mac 128K_ :) )
+
+If using an SD card, use a FAT-formatted card and copy your disc image
+into _one_ of the following files in the root of the card:
+
+   * `umac0.img`:  A normal read/write disc image
+   * `umac0ro.img`:  A read-only disc image
 
 ## Putting it together, and building
 
-Given the `rom.bin` and `disc.bin` prepared above, you can now
-generate includes from them and perform the build:
+Given the `rom.bin` prepared above and a `disc.bin` destinated for
+flash, you can now generate includes from them and perform the build:
 
 ```
 mkdir incbin
 xxd -i < rom.bin > incbin/umac-rom.h
+
+# When using an internal disc image:
 xxd -i < disc.bin > incbin/umac-disc.h
+# OR, if using SD and if you do _not_ want an internal image:
+echo > incbin/umac-disc.h
+
 make -C build
 ```
 
@@ -86,7 +166,8 @@ The LED should flash at about 2Hz once powered up.
 It's a simple circuit in terms of having few components: just the
 Pico, with three series resistors and a VGA connection, and DC power.
 However, if you're not comfortable soldering then don't choose this as
-your first project: I don't want you to zap your mouse
+your first project: I don't want you to zap your mouse, keyboard,
+monitor, SD cards...
 
 Disclaimer: This is a hardware project with zero warranty.  All due
 care has been taken in design/docs, but if you choose to build it then
@@ -110,7 +191,6 @@ signals.
 
 That's it... power in, USB adapter.
 
-
 ## Pinout and circuit
 
 Parts needed:
@@ -122,6 +202,14 @@ Parts needed:
    * 100Ω resistor
    * 2x 66Ω resistors
    * VGA DB15 connector, or janky chopped VGA cable
+   * (optional) SD card breakout, SD card
+
+If you want to get fancy with an SD card, you will need some kind of
+SD card SPI breakout adapter.  (There are a lot of these around, but
+many seem to have a buffer/level-converter for 5V operation.  Find one
+without, or modify your adapter for a 3.3V supply.  Doing so, and
+finding an SD card that works well with SPI is out of scope of this
+doc.)
 
 Pins are given for a RPi Pico board, but this will work on any RP2040
 board with 2MB+ flash as long as all required GPIOs are pinned out:
@@ -149,8 +237,29 @@ If you don't have exactly 100Ω, using slightly more is OK but display
 will be dimmer.  If you don't have 66Ω for the syncs, connecting them
 directly is "probably OK", but YMMV.
 
+If you are including an SD card, the default pinout is as follows
+(this can be changed at build time, above):
+
+| GPIO/pin     | Pico pin     | Usage          |
+| ------------ | ------------ | -------------- |
+|   GP2        | 4            | SPI0 SCK       |
+|   GP3        | 5            | SPI0 TX (MOSI) |
+|   GP4        | 6            | SPI0 RX (MISO) |
+|   GP5        | 7            | SPI0 /CS       |
+
+(The SD card needs a good ground, e.g. Pico pin 8 nearby, and 3.3V
+supply from Pico pin 36.)
+
+If your SD breakout board is "raw", i.e. has no buffer or series
+resistors on-board, you may find adding a 66Ω resistor in series on
+all of the four signal lines will help.  Supply decoupling caps will
+also be important (e.g. 1uF+0.1uF) to keep the SD card happy.  _Keep
+SD card wiring short._ The default SPI clock (5MHz) is
+conservative/slow, but I suggest verifying the circuit/SD card works
+before increasing it.
+
 Test your connections: the key part is not getting over 0.7V into your
-VGA connector's signals.
+VGA connector's signals, or shorting SD card pins.
 
 Connect USB mouse, and keyboard if you like, and power up.
 
@@ -208,7 +317,9 @@ I'm considering improvements to the video system:
 
 `hid.c` and `tusb_config.h` are based on code from the TinyUSB
 project, which is Copyright (c) 2019, 2021 Ha Thach (tinyusb.org) and
-released under the MIT licence.
+released under the MIT licence.  `sd_hw_config.c` is based on code
+from the no-OS-FatFS-SD-SPI-RPi-Pico project, which is Copyright (c)
+2021 Carl John Kugler III.
 
 The remainder of the code is released under the MIT licence:
 
