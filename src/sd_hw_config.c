@@ -50,8 +50,7 @@ static spi_t spis[] = {  // One for each SPI.
         .sck_gpio_drive_strength = GPIO_DRIVE_STRENGTH_8MA,
 
         // One of my cards doesn't seem to work beyond 5MHz :(
-        .baud_rate = 5 * 1000 * 1000,
-        //.baud_rate = 25 * 1000 * 1000, // Actual frequency: 20833333. 
+        .baud_rate = SD_MHZ * 1000 * 1000,
     }
 };
 
