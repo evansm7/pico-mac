@@ -25,6 +25,13 @@
 #
 cmake_minimum_required(VERSION 3.13)
 
+# Options that should be defined when initialising the build
+# directory with cmake, e.g. "cmake .. -DOPTION=true":
+#
+
+# See below, -DMEMSIZE=<size in KB> will configure umac's memory size,
+# overriding defaults.
+
 # initialize the SDK based on PICO_SDK_PATH
 # note: this must happen before project()
 include(pico_sdk_import.cmake)
@@ -57,7 +64,9 @@ set(UMAC_SOURCES
   ${UMAC_MUSASHI_PATH}/m68kops.c
   ${UMAC_MUSASHI_PATH}/softfloat/softfloat.c
   )
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DPICO -DMUSASHI_CNF=\\\"../include/m68kconf.h\\\"")
+
+set(MEMSIZE 128 CACHE STRING "Memory size, in KB")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DPICO -DMUSASHI_CNF=\\\"../include/m68kconf.h\\\" -DUMAC_MEMSIZE=${MEMSIZE}")
 
 if (TARGET tinyusb_device)
   add_executable(firmware
