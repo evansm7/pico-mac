@@ -45,6 +45,7 @@
  */
 #define VIDEO_UC
 //#define VIDEO_STREAMING_XIP // Buggy, and unstable video
+//#define VIDEO_CMO_DMA // As opposed to CPU-driven; doesn't work
 #endif
 
 #include <stdio.h>
@@ -154,8 +155,28 @@ static void     __not_in_flash_func(video_fill_bounce)(unsigned int y)
 }
 #endif
 
+#ifdef VIDEO_CMO_DMA
+/* This doesn't work :( */
+static uint8_t  video_dmach_cmo;
+#endif
+
 static void     __not_in_flash_func(video_clean_line)(unsigned int y)
 {
+#ifdef VIDEO_CMO_DMA
+        /* Kick off a DMA to clean caches of the line starting at framebuffer[y*WPL]:
+         */
+        uintptr_t addr = (uintptr_t)XIP_MAINTENANCE_BASE +
+                /* 26-bit PSRAM address to target: */
+                (((uintptr_t)&video_framebuffer[y*VIDEO_VISIBLE_WPL]) & 0x03fffff0) +
+                /* Clean by address: */ 3;
+        static int donep = 0;
+        if (!donep) {
+                donep = 1;
+                printf("clean to addr %08x, line %d, fb at %08x\n", addr, y, video_framebuffer);
+        }
+        dma_channel_set_write_addr(video_dmach_cmo, (void *)addr, false);
+        dma_channel_set_trans_count(video_dmach_cmo, VIDEO_VISIBLE_WPL /* FIXME */, true);
+#else
         /* A more costly CPU-driven XIP cache clean of a framebuffer
          * line.  (That said, it's 8 stores (plus writeback time I
          * suppose) so not terrrrrrible.)
@@ -168,6 +189,7 @@ static void     __not_in_flash_func(video_clean_line)(unsigned int y)
                                                     /* Clean by address: */ 3);
                 *clean_addr = 0;
         }
+#endif
 }
 
 static const uint32_t   *__not_in_flash_func(video_line_addr)(unsigned int y)
@@ -415,6 +437,24 @@ static void     video_init_dma()
         dma_channel_configure(video_dmach_rx, &dc_rx_d,
                               video_bounce[0],
                               (void *)XIP_AUX_BASE,
+                              VIDEO_VISIBLE_WPL,
+                              false /* Not yet */);
+#endif
+#ifdef VIDEO_CMO_DMA
+        video_dmach_cmo = dma_claim_unused_channel(true);
+        /* This is an attempt at an "automated" XIP cache clean of a
+         * range using DMA.  It writes (any value) to the
+         * XIP_MAINTENANCE_BASE region.  Addr[2:0]=011 are clean by
+         * address.  We HOPE that the lower address bits make it through
+         * DMA/AHB etc. to the XIP region.......
+         */
+        dma_channel_config dc_cmo = dma_channel_get_default_config(video_dmach_cmo);
+        channel_config_set_transfer_data_size(&dc_cmo, DMA_SIZE_32);
+        channel_config_set_read_increment(&dc_cmo, false);
+        channel_config_set_write_increment(&dc_cmo, true); // somehow do the 64b increment pls?
+        dma_channel_configure(video_dmach_cmo, &dc_cmo,
+                              0, /* Constructed later */
+                              (void *)video_null, /* Can be anything in SRAM */
                               VIDEO_VISIBLE_WPL,
                               false /* Not yet */);
 #endif
