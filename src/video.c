@@ -32,6 +32,21 @@
  * SOFTWARE.
  */
 
+#ifdef USE_PSRAM
+/* If the FB is in PSRAM, accessing it through the XIP cache is
+ * coherent (i.e. good data), but will knock out useful things.  It's
+ * preferable to access it either via the UC mapping (with simple DMA
+ * as usual) or directly via the QMI/XIP streaming interface.
+ *
+ * To try different options, define one of VIDEO_UC or VIDEO_STREAMING_XIP
+ *
+ * The UC approach (with necessary cache clean CMOs) seems to give about
+ * +4% (in informal benchmarking...)
+ */
+#define VIDEO_UC
+//#define VIDEO_STREAMING_XIP // Buggy, and unstable video
+#endif
+
 #include <stdio.h>
 #include <inttypes.h>
 #include <string.h>
@@ -39,6 +54,7 @@
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/structs/padsbank0.h"
+#include "hardware/structs/xip_ctrl.h"
 #include "pio_video.pio.h"
 
 #include "hw.h"
@@ -121,13 +137,94 @@ static int      __not_in_flash_func(video_get_visible_y)(unsigned int y) {
         }
 }
 
+#ifdef VIDEO_STREAMING_XIP
+/* One more DMA channel, and bounce buffers used to stream video data
+ * from the QMI and then stage them for subsequent scan-out DMA:
+ */
+static uint8_t  video_dmach_rx;
+#define VBOUNCE_NBUF            4
+#define VBOUNCE_RBUF(y)	        ((y) & (VBOUNCE_NBUF-1))
+#define VBOUNCE_WBUF(y)	        (((y) - 1) & (VBOUNCE_NBUF-1))
+static uint32_t video_bounce[VBOUNCE_NBUF][VIDEO_VISIBLE_WPL];
+
+static void     __not_in_flash_func(video_fill_bounce)(unsigned int y)
+{
+        dma_channel_set_write_addr(video_dmach_rx, video_bounce[VBOUNCE_WBUF(y)], false);
+        dma_channel_set_trans_count(video_dmach_rx, VIDEO_VISIBLE_WPL, true);
+}
+#endif
+
+static void     __not_in_flash_func(video_clean_line)(unsigned int y)
+{
+        /* A more costly CPU-driven XIP cache clean of a framebuffer
+         * line.  (That said, it's 8 stores (plus writeback time I
+         * suppose) so not terrrrrrible.)
+         */
+        for (int i = 0; i < VIDEO_VISIBLE_WPL; i += 2 /* 64b at a time */) {
+                uintptr_t fb_addr = (uintptr_t)&video_framebuffer[(y*VIDEO_VISIBLE_WPL) + i];
+                uint32_t *clean_addr = (uint32_t *)(XIP_MAINTENANCE_BASE |
+                                                    /* 26-bit PSRAM address to target: */
+                                                    (fb_addr & 0x03fffff8) |
+                                                    /* Clean by address: */ 3);
+                *clean_addr = 0;
+        }
+}
+
 static const uint32_t   *__not_in_flash_func(video_line_addr)(unsigned int y)
 {
         int vy = video_get_visible_y(y);
-        if (vy >= 0)
-                return (const uint32_t *)&video_framebuffer[vy * VIDEO_VISIBLE_WPL];
-        else
+
+#ifdef VIDEO_STREAMING_XIP
+        /* There is a bug, and gross behaviour here:
+         * - The top 2 lines of the framebuffer are missing/black
+         * - The XIP streaming transfer seems to be very low priority, and
+         *   any other activity (e.g. executing stuff from flash) seems to
+         *   cause it to underrun, display shimmering, etc.
+         */
+	if (y == (VIDEO_FB_V_VIS_START - 10)) {
+		// Some lines before video starts, set up streaming:
+		xip_ctrl_hw->stream_ctr = 0;
+		while (!(xip_ctrl_hw->stat & XIP_STAT_FIFO_EMPTY))
+			(void) xip_ctrl_hw->stream_fifo;
+		xip_ctrl_hw->stream_addr = (uint32_t)&video_framebuffer[0];
+		xip_ctrl_hw->stream_ctr = VIDEO_VISIBLE_WPL*VIDEO_FB_VRES;
+	}
+
+        if (vy >= 0) {
+		/* Trigger streaming DMA into other bounce buffer,
+                 * and clean the next line on (before it's later read)
+                 */
+                video_clean_line(vy+VBOUNCE_NBUF);
+                video_fill_bounce(y);
+
+		return (const uint32_t *)video_bounce[VBOUNCE_RBUF(y)];
+        } else {
+		/* The lines before framebuffer starts trigger DMA to
+                 * fill N-1 bounce buffers:
+                 */
+                if (y < VIDEO_FB_V_VIS_START) {
+                        if (y >= (VIDEO_FB_V_VIS_START - (VBOUNCE_NBUF)))
+                                video_clean_line(video_get_visible_y(y+VBOUNCE_NBUF));
+                        if (y >= (VIDEO_FB_V_VIS_START - (VBOUNCE_NBUF - 1)))
+                                video_fill_bounce(y);
+                }
+
                 return (const uint32_t *)video_null;
+        }
+#else
+#ifdef VIDEO_UC
+        if (y == (VIDEO_FB_V_VIS_START - 1))
+                video_clean_line(0); // Clean first line
+#endif
+        if (vy >= 0) {
+#ifdef VIDEO_UC
+                video_clean_line(vy + 1); // Clean next line
+#endif
+                return (const uint32_t *)&video_framebuffer[vy * VIDEO_VISIBLE_WPL];
+        } else {
+                return (const uint32_t *)video_null;
+        }
+#endif
 }
 
 static const uint32_t   *__not_in_flash_func(video_cfg_addr)(unsigned int y)
@@ -304,6 +401,23 @@ static void     video_init_dma()
          * to next line's video cfg/data buffers.  Then, video_dmach_descr_cfg can be triggered
          * to start video.
          */
+
+#ifdef VIDEO_STREAMING_XIP
+        video_dmach_rx = dma_claim_unused_channel(true);
+        /* Another channel reads from the framebuffer via the XIP streaming port,
+         * writing it to the bounce buffers in memory (we can't do device-to-device DMA).
+         */
+        dma_channel_config dc_rx_d = dma_channel_get_default_config(video_dmach_rx);
+        channel_config_set_transfer_data_size(&dc_rx_d, DMA_SIZE_32);
+        channel_config_set_dreq(&dc_rx_d, DREQ_XIP_STREAM);
+        channel_config_set_read_increment(&dc_rx_d, false);
+        channel_config_set_write_increment(&dc_rx_d, true);
+        dma_channel_configure(video_dmach_rx, &dc_rx_d,
+                              video_bounce[0],
+                              (void *)XIP_AUX_BASE,
+                              VIDEO_VISIBLE_WPL,
+                              false /* Not yet */);
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -340,7 +454,11 @@ void    video_init(uint32_t *framebuffer)
 
         /* Init config word buffers */
         video_current_y = 0;
-        video_framebuffer = framebuffer;
+        video_framebuffer = (void *)((uintptr_t)framebuffer
+#ifdef VIDEO_UC
+                                     | 0x04000000 /* uncached */
+#endif
+                );
         video_prep_buffer();
 
         /* Set up pointers to first line, and start DMA */
