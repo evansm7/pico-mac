@@ -3,4 +3,4 @@
 	path = external/umac
 [submodule "external/no-OS-FatFS-SD-SPI-RPi-Pico"]
 	path = external/no-OS-FatFS-SD-SPI-RPi-Pico
-	url = https://github.com/carlk3/no-OS-FatFS-SD-SPI-RPi-Pico.git
+	url = https://github.com/evansm7/no-OS-FatFS-SD-SPI-RPi-Pico.git
