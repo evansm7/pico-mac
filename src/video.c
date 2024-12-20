@@ -65,8 +65,8 @@
 #define VIDEO_V_VIS_START       (VIDEO_VSW + VIDEO_VBP)
 #define VIDEO_V_VIS_END         (VIDEO_V_VIS_START + VIDEO_VRES)
 
-#define VIDEO_FB_HRES           512
-#define VIDEO_FB_VRES           342
+#define VIDEO_FB_HRES           DISP_WIDTH
+#define VIDEO_FB_VRES           DISP_HEIGHT
 
 /* The lines at which the FB data is actively output: */
 #define VIDEO_FB_V_VIS_START    (VIDEO_V_VIS_START + ((VIDEO_VRES - VIDEO_FB_VRES)/2))

@@ -35,6 +35,7 @@ set(SD_RX 4 CACHE STRING "SD SPI RX pin")
 set(SD_SCK 2 CACHE STRING "SD SPI SCK pin")
 set(SD_CS 5 CACHE STRING "SD SPI CS pin")
 set(SD_MHZ 5 CACHE STRING "SD SPI speed in MHz")
+option(USE_VGA_RES "Video uses VGA (640x480) resolution" OFF)
 
 # See below, -DMEMSIZE=<size in KB> will configure umac's memory size,
 # overriding defaults.
@@ -82,6 +83,15 @@ if (USE_SD)
    set(EXTRA_SD_SRC src/sd_hw_config.c)
    set(EXTRA_SD_LIB FatFs_SPI)
    add_compile_definitions(SD_TX=${SD_TX} SD_RX=${SD_RX} SD_SCK=${SD_SCK} SD_CS=${SD_CS} SD_MHZ=${SD_MHZ})
+endif()
+
+if (USE_VGA_RES)
+   add_compile_definitions(USE_VGA_RES=1)
+   add_compile_definitions(DISP_WIDTH=640)
+   add_compile_definitions(DISP_HEIGHT=480)
+else()
+   add_compile_definitions(DISP_WIDTH=512)
+   add_compile_definitions(DISP_HEIGHT=342)
 endif()
 
 if (TARGET tinyusb_device)

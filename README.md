@@ -17,6 +17,8 @@ It has features, many features, the best features:
      disc storage on an SPI-attached SD card
    * Mac 128K by default, or you can make use of more of the Pico's
      memory and run as a _Mac 208K_
+   * Since you now have more memory, you can splash out on more
+     screen real-estate, and use 640x480 resolution!
 
 Great features.  It even doesn't hang at random!  (Anymore.)
 
@@ -57,6 +59,15 @@ This is because `umac` is used to patch the ROM, and when using
 unsupported sizes between 128K and 512K the RAM size can't be probed
 automatically, so the size needs to be embedded.
 
+This is also the case for altering the video resolution, because the ROM
+must be patched for this.  Build `umac` with `DISP_WIDTH=640 DISP_HEIGHT=480`
+when you intend to use the `USE_VGA_RES` option.  For example:
+
+```
+cd external/umac
+make MEMSIZE=208 DISP_WIDTH=640 DISP_HEIGHT=480
+```
+
 ## Build pico-umac
 
 Do the initial Pico SDK `cmake` setup into an out-of-tree build dir,
@@ -90,6 +101,11 @@ Options are required if you want SD support, or more than the default 128K of me
         writeable boot volume on SD) will allow _MacPaint_ to run.
       - **NOTE**: When this option is used, the ROM image must be
           built with an `umac` build with a corresponding `MEMSIZE`
+   * `-DUSE_VGA_RES=1`: Use 640x480 screen resolution instead of the
+     native 512x342.  This uses an additional 16KB of RAM, so this
+     option makes a _Mac 128K_ configuration virtually unusable.
+     It is recommended only to use this when configuring >208K
+     using the option above.
 
 Tip: `cmake` caches these variables, so if you see weird behaviour
 having built previously and then changed an option, delete the `build`
@@ -108,9 +124,10 @@ post-patching binary out:
 ```
 
 Note: Again, remember that if you are using the `-DMEMSIZE` option to
-increase the `pico-umac` memory, you will need to create this ROM
-image with a `umac` built with the corresponding `MEMSIZE` option, as
-above.
+increase the `pico-umac` memory, or the `-DUSE_VGA_RES` option to
+increase the `pico-umac` screen resolution, you will need to create
+this ROM image with a `umac` built with the corresponding
+`MEMSIZE`/`DISP_WIDTH`/`DISP_HEIGHT` options, as above.
 
 ## Disc image
 
