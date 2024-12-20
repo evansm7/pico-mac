@@ -1,6 +1,6 @@
 # Pico Micro Mac (pico-umac)
 
-v0.2 27 August 2024
+v0.21 20 December 2024
 
 
 This project embeds the [umac Mac 128K
