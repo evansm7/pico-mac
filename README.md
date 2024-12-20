@@ -80,7 +80,8 @@ mkdir build
 (cd build ; PICO_SDK_PATH=/path/to/sdk cmake .. <options>)
 ```
 
-Options are required if you want SD support, or more than the default 128K of memory:
+Options are required if you want SD support, more than the default 128K of memory,
+higher resolution, to change pin configs, etc.:
 
    * `-DUSE_SD=true`: Include SD card support.  The GPIOs default to
      `spi0` running at 5MHz, and GPIOs 2,3,4,5 for
@@ -106,6 +107,8 @@ Options are required if you want SD support, or more than the default 128K of me
      option makes a _Mac 128K_ configuration virtually unusable.
      It is recommended only to use this when configuring >208K
      using the option above.
+   * `-DVIDEO_PIN=<GPIO pin>`: Move the video output pins; defaults
+     to the pinout shown below.
 
 Tip: `cmake` caches these variables, so if you see weird behaviour
 having built previously and then changed an option, delete the `build`
@@ -235,12 +238,18 @@ board with 2MB+ flash as long as all required GPIOs are pinned out:
 | ------------ | ------------ | -------------- |
 |   GP0        | 1            | UART0 TX       |
 |   GP1        | 2            | UART0 RX       |
-|   GP18       | 24           | Video output   |
+|   GP18       | 24           | Video output % |
 |   GP19       | 25           | VSYNC          |
 |   GP21       | 27           | HSYNC          |
 |   Gnd        | 23, 28       | Video ground   |
 |   VBUS (5V)  | 40           | +5V supply     |
 |   Gnd        | 38           | Supply ground  |
+
+%: The video pins default here, but can be moved by building with the
+   `-DVIDEO_PIN` option.  This sets the position of the Video pin,
+   which is immediately followed by VSYNC, then a gap, then HSYNC.
+   For example, `-DVIDEO_PIN=20` configures the Video pin at 20,
+   VSYNC at 21, HSYNC at 23.
 
 Method:
 
