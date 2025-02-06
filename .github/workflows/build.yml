@@ -1,0 +1,74 @@
+name: build
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code and install dependencies
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install python3 build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib libsdl2-dev
+          wget https://github.com/Kitware/CMake/releases/download/v3.31.5/cmake-3.31.5-linux-x86_64.tar.gz
+          tar xf cmake-*-linux-x86_64.tar.gz
+          git submodule update --init --recursive
+          git clone --recursive https://github.com/raspberrypi/pico-sdk
+          wget "https://archive.org/download/Macintosh_ROMs_Collection_1990s/Mac_ROMs.zip/Mac_ROMs%2F68k%2F128k%2FMacintosh%20Plus%2F1986-03%20-%204D1F8172%20-%20MacPlus%20v3.ROM" -O "4D1F8172 - MacPlus v3.ROM"
+          wget "https://archive.org/download/apple-mac-os-system-3.2-finder-5.3-system-tools-1.0-512-ke-jun-1986-3.5-800k.-7z/Apple%20Mac%20OS%20%28System%203.2%20Finder%205.3%29%20%28System%20Tools%201.0%20512Ke%29%20%28Jun%201986%29%20%283.5-800k%29.7z/Apple%20Mac%20OS%20%28System%203.2%20Finder%205.3%29%20%28System%20Tools%201.0%20512Ke%29%20%28Jun%201986%29%20%283.5-800k%29%2FSystem%20Tools%20512ke%20v1.0.img" -O disk.img
+          # Made with: truncate -s 12M disk.img, then copied contents of the disk above and additional content using Mini vMac
+          # wget "https://github.com/probonopd/pico-mac/releases/download/ingredients/disk.zip"
+          # unzip disk.zip
+      - name: Build and upload firmware
+        run: |
+          export PATH=$(readlink -f ./cmake-*-linux-x86_64/bin):$PATH
+          export PICO_SDK_PATH=$(readlink -f ./pico-sdk)
+          for res in "vga" "classic" ; do
+          git submodule foreach git clean -fd
+            cd external/umac/
+            if [ "$res" == "vga" ] ; then
+              echo "Using VGA resolution"
+              make MEMSIZE=208 DISP_WIDTH=640 DISP_HEIGHT=480
+            else
+              echo "Using Classic resolution"
+              make MEMSIZE=208
+            fi
+            cd -
+            ./external/umac/main -r "4D1F8172 - MacPlus v3.ROM" -W rom.bin 2>/dev/null || true
+            ls -lh rom.bin
+            mkdir -p incbin
+            xxd -i < rom.bin > incbin/umac-rom.h
+            xxd -i < disk.img > incbin/umac-disc.h
+  
+            for pin in 18 9; do
+              rm -rf build || true
+              mkdir build
+              cd build
+              if [ "$res" == "vga" ] ; then
+                echo "Using VGA resolution"
+                cmake .. -DMEMSIZE=208 -DUSE_VGA_RES=1 -DVIDEO_PIN=$pin -DUSE_SD=true # -DPICO_BOARD=weact_studio_rp2040_16mb
+              else
+                echo "Using Classic resolution"
+                cmake .. -DMEMSIZE=208 -DVIDEO_PIN=$pin -DUSE_SD=true # -DPICO_BOARD=weact_studio_rp2040_16mb
+              fi
+              make -j$(nproc)
+              cd ..
+              make -C build -j $(nproc)
+              mkdir -p artifacts/pin$pin-$res
+              cp build/firmware.uf2 artifacts/pin$pin-$res/
+            done
+          done
+          ( cd artifacts/ ; zip -r ../firmware.zip * )
+
+      - name: Upload files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          export UPLOADTOOL_SUFFIX=$GITHUB_REF_NAME
+          wget -c https://github.com/probonopd/uploadtool/raw/master/upload.sh
+          bash upload.sh firmware.zip
