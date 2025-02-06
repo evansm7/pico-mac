@@ -181,7 +181,7 @@ time is a pain – I ended up moving to SWD probe programming.)
 
 The LED should flash at about 2Hz once powered up.
 
-# Hardware contruction
+# Hardware construction
 
 It's a simple circuit in terms of having few components: just the
 Pico, with three series resistors and a VGA connection, and DC power.
@@ -304,7 +304,7 @@ into `umac`.
 Quite a lot of optimisation has been done in `umac` and `Musashi` to
 get performance up on Cortex-M0+ and the RP2040, like careful location
 of certain routines in RAM, ensuring inlining/constants can be
-foldeed, etc.  It's 5x faster than it was at the beginning.
+folded, etc.  It's 5x faster than it was at the beginning.
 
 The top-level project might be a useful framework for other emulators,
 or other projects that need USB HID input and a framebuffer (e.g. a
