@@ -50,10 +50,10 @@ jobs:
               cd build
               if [ "$res" == "vga" ] ; then
                 echo "Using VGA resolution"
-                cmake .. -DMEMSIZE=208 -DUSE_VGA_RES=1 -DVIDEO_PIN=$pin -DUSE_SD=true # -DPICO_BOARD=weact_studio_rp2040_16mb
+                cmake .. -DMEMSIZE=208 -DUSE_VGA_RES=1 -DVIDEO_PIN=$pin -DUSE_SD=true -DSWITCH_ALT_GUI=true # -DPICO_BOARD=weact_studio_rp2040_16mb
               else
                 echo "Using Classic resolution"
-                cmake .. -DMEMSIZE=208 -DVIDEO_PIN=$pin -DUSE_SD=true # -DPICO_BOARD=weact_studio_rp2040_16mb
+                cmake .. -DMEMSIZE=208 -DVIDEO_PIN=$pin -DUSE_SD=true -DSWITCH_ALT_GUI=true # -DPICO_BOARD=weact_studio_rp2040_16mb
               fi
               make -j$(nproc)
               cd ..

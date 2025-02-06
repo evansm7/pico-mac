@@ -37,6 +37,7 @@ set(SD_CS 5 CACHE STRING "SD SPI CS pin")
 set(SD_MHZ 5 CACHE STRING "SD SPI speed in MHz")
 option(USE_VGA_RES "Video uses VGA (640x480) resolution" OFF)
 set(VIDEO_PIN 18 CACHE STRING "Video GPIO base pin (followed by VS, CLK, HS)")
+option(SWITCH_ALT_GUI "Switch Alt and GUI keys" OFF)
 
 # See below, -DMEMSIZE=<size in KB> will configure umac's memory size,
 # overriding defaults.
@@ -95,6 +96,10 @@ else()
    add_compile_definitions(DISP_HEIGHT=342)
 endif()
 add_compile_definitions(GPIO_VID_BASE=${VIDEO_PIN})
+
+if (SWITCH_ALT_GUI)
+    add_compile_definitions(SWITCH_ALT_GUI=1)
+endif()
 
 if (TARGET tinyusb_device)
   add_executable(firmware

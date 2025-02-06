@@ -164,12 +164,22 @@ static const uint8_t hid_to_mac[256] = {
         /* [HID_KEY_KEYPAD_EQUAL_SIGN] = MKC_, */
         [HID_KEY_CONTROL_LEFT] = MKC_Control,
         [HID_KEY_SHIFT_LEFT] = MKC_Shift,
+#if SWITCH_ALT_GUI
+        [HID_KEY_ALT_LEFT] = MKC_Command,
+        [HID_KEY_GUI_LEFT] = MKC_Option,
+#else
         [HID_KEY_ALT_LEFT] = MKC_Option,
         [HID_KEY_GUI_LEFT] = MKC_Command,
+#endif
         [HID_KEY_CONTROL_RIGHT] = MKC_Control,
         [HID_KEY_SHIFT_RIGHT] = MKC_Shift,
+#if SWITCH_ALT_GUI
+        [HID_KEY_ALT_RIGHT] = MKC_Command,
+        [HID_KEY_GUI_RIGHT] = MKC_Option,
+#else
         [HID_KEY_ALT_RIGHT] = MKC_Option,
         [HID_KEY_GUI_RIGHT] = MKC_Command,
+#endif
 };
 
 static bool     kbd_map(uint8_t hid_keycode, bool pressed, uint16_t *key_out)
