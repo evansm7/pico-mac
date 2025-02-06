@@ -109,6 +109,9 @@ higher resolution, to change pin configs, etc.:
      using the option above.
    * `-DVIDEO_PIN=<GPIO pin>`: Move the video output pins; defaults
      to the pinout shown below.
+   * `-DSWITCH_ALT_GUI=true`: Switch Alt and GUI keys.  This is
+     useful to have the Mac Command key mapped to the Alt key,
+     which is next to the spacebar on most PC keyboards.
 
 Tip: `cmake` caches these variables, so if you see weird behaviour
 having built previously and then changed an option, delete the `build`
